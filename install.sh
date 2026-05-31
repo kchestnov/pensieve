@@ -35,6 +35,9 @@ install_file .claude/commands/pensieve.md "$CLAUDE_COMMANDS/pensieve.md"
 mkdir -p "$CLAUDE_SKILLS/legilimens"
 install_file .claude/skills/legilimens/SKILL.md "$CLAUDE_SKILLS/legilimens/SKILL.md"
 
+mkdir -p "$CLAUDE_SKILLS/obliviate"
+install_file .claude/skills/obliviate/SKILL.md "$CLAUDE_SKILLS/obliviate/SKILL.md"
+
 mkdir -p "$PENSIEVE_HOME/raw/assets"
 mkdir -p "$PENSIEVE_HOME/wiki/sources"
 mkdir -p "$PENSIEVE_HOME/wiki/entities"
