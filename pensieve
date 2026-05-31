@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-export PENSIEVE_HOME="${PENSIEVE_HOME:-$HOME/pensieve/}"
+RAW="${PENSIEVE_HOME:-$HOME/pensieve}/raw"
 
 pensieve_slugify() { echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]-' '-' | sed 's/^-*//;s/-*$//'; }
 
@@ -28,7 +28,7 @@ pensieve_write_note() {
         rm -f "$tmp"
     fi
 
-    local file="${PENSIEVE_HOME}${title}.md"
+    local file="${RAW}/${title}.md"
     print -r -- "$note" > "$file"
     print "Saved: $file"
 }
@@ -37,10 +37,10 @@ pensieve_save_file() {
     local src="$1" type="$2" context="$3" use_editor="$4"
     local ext="${src:e}"
     local slug="$(date +%Y%m%d-%H%M%S)-$(pensieve_slugify "${src:t:r}")${ext:+.$ext}"
-    mkdir -p "${PENSIEVE_HOME}assets"
-    cp "$src" "${PENSIEVE_HOME}assets/${slug}"
+    mkdir -p "${RAW}/assets"
+    cp "$src" "${RAW}/assets/${slug}"
     pensieve_write_note "$type" "[${src:t} — pending processing]" "assets/${slug}" "$context" "$use_editor"
-    print "Asset: ${PENSIEVE_HOME}assets/${slug}"
+    print "Asset: ${RAW}/assets/${slug}"
 }
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
