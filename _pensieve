@@ -1,0 +1,18 @@
+#compdef pensieve
+
+_pensieve() {
+    local -a types=(
+        '@conversation:slack, email, any message fragment'
+        '@article:web, docs, reference material'
+        '@command:ready-to-run CLI invocation'
+        '@snippet:partial script, pattern, inspiration'
+        '@log:log output, errors, diagnostic artifacts'
+        '@todo:intent to implement, pipeline resolves into a Story'
+    )
+
+    if [[ $CURRENT -eq 2 && $words[CURRENT] == @* ]]; then
+        _describe 'type' types
+    fi
+}
+
+_pensieve "$@"

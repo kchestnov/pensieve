@@ -1,0 +1,124 @@
+#!/usr/bin/env zsh
+
+export PENSIEVE_HOME="${PENSIEVE_HOME:-$HOME/pensieve/}"
+
+pensieve_slugify() { echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]-' '-' | sed 's/^-*//;s/-*$//'; }
+
+pensieve_write_note() {
+    local type="$1" content="$2" asset="$3" context="$4" use_editor="$5"
+    local title=$(date +%Y%m%d-%H%M%S)
+    local note
+    note=$(
+        print -- "---"
+        print -- "date: $(date +%Y-%m-%dT%H:%M:%S)"
+        print -- "type: ${type}"
+        print -- "tags: []"
+        [[ -n "$context" ]] && print -- "context: ${context}"
+        [[ -n "$asset" ]] && print -- "asset: ${asset}"
+        print -- "---"
+        print -- ""
+        print -r -- "$content"
+    )
+
+    if [[ "$use_editor" -eq 1 ]]; then
+        local tmp=$(mktemp /tmp/pensieve.XXXXXX.md)
+        print -r -- "$note" > "$tmp"
+        ${=EDITOR:-vi} "$tmp" < /dev/tty > /dev/tty
+        note=$(cat "$tmp")
+        rm -f "$tmp"
+    fi
+
+    local file="${PENSIEVE_HOME}${title}.md"
+    print -r -- "$note" > "$file"
+    print "Saved: $file"
+}
+
+pensieve_save_file() {
+    local src="$1" type="$2" context="$3" use_editor="$4"
+    local ext="${src:e}"
+    local slug="$(date +%Y%m%d-%H%M%S)-$(pensieve_slugify "${src:t:r}")${ext:+.$ext}"
+    mkdir -p "${PENSIEVE_HOME}assets"
+    cp "$src" "${PENSIEVE_HOME}assets/${slug}"
+    pensieve_write_note "$type" "[${src:t} — pending processing]" "assets/${slug}" "$context" "$use_editor"
+    print "Asset: ${PENSIEVE_HOME}assets/${slug}"
+}
+
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    print "Usage: pensieve [@type] [context words] [-e] [-- inline content]"
+    print ""
+    print "Types:"
+    print "  @conversation  slack, email, any message fragment"
+    print "  @article       web, docs, reference material"
+    print "  @command       ready-to-run CLI invocation"
+    print "  @snippet       partial script, pattern, inspiration"
+    print "  @log           log output, errors, diagnostic artifacts"
+    print "  @todo          intent to implement, pipeline resolves into a Story"
+    print ""
+    print "Flags:"
+    print "  -e             open \$EDITOR with resolved content before saving"
+    print ""
+    print "Content sources (priority order):"
+    print "  1. -- inline content"
+    print "  2. file path argument(s)"
+    print "  3. stdin (piped)"
+    print "  4. clipboard file URL"
+    print "  5. clipboard text"
+    print ""
+    print "Filename is always a timestamp. Context words go into frontmatter."
+    exit 0
+fi
+
+local type="unknown"
+[[ "$1" == @* ]] && { type="${1#@}"; shift }
+
+local use_editor=0
+local -a pre_args=() post_args=()
+local saw_sep=0
+for arg in "$@"; do
+    if [[ "$arg" == "-e" ]]; then use_editor=1; continue; fi
+    if [[ "$arg" == "--" ]]; then saw_sep=1; continue; fi
+    [[ $saw_sep -eq 0 ]] && pre_args+=("$arg") || post_args+=("$arg")
+done
+
+# -- inline content
+if [[ $saw_sep -eq 1 ]]; then
+    local context="${pre_args[*]}"
+    local content="${post_args[*]}"
+    pensieve_write_note "$type" "$content" "" "$context" "$use_editor"
+    exit 0
+fi
+
+# split pre_args into file args and context words
+local -a file_args=() context_args=()
+for arg in "${pre_args[@]}"; do
+    [[ -e "$arg" ]] && file_args+=("$arg") || context_args+=("$arg")
+done
+local context="${context_args[*]}"
+
+if [[ ${#file_args[@]} -gt 0 ]]; then
+    for f in "${file_args[@]}"; do
+        pensieve_save_file "$f" "$type" "$context" "$use_editor"
+    done
+    exit 0
+fi
+
+# stdin
+if [[ ! -t 0 ]]; then
+    local content
+    content=$(cat)
+    pensieve_write_note "$type" "$content" "" "$context" "$use_editor"
+    exit 0
+fi
+
+# clipboard file URL
+local asset_src
+asset_src=$(osascript -e 'POSIX path of (the clipboard as «class furl»)' 2>/dev/null | tr -d '\n')
+if [[ -n "$asset_src" && -e "$asset_src" ]]; then
+    pensieve_save_file "$asset_src" "$type" "$context" "$use_editor"
+    exit 0
+fi
+
+# clipboard text
+local content
+content=$(pbpaste)
+pensieve_write_note "$type" "$content" "" "$context" "$use_editor"
