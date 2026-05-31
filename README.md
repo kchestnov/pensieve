@@ -10,6 +10,14 @@ curl -fsSL https://raw.githubusercontent.com/kchestnov/pensieve/main/install.sh 
 
 Installs `pensieve` to `~/.local/bin/`, `_pensieve` completion to `~/.local/share/zsh/site-functions/`, and the Claude Code skill to `~/.claude/commands/` (if present). Re-run to update.
 
+Add to `~/.claude/settings.json` to co-locate Claude Code's auto-memory with your knowledge base:
+
+```json
+{
+  "autoMemoryDirectory": "~/pensieve/memory"
+}
+```
+
 Add to your `.zshrc`:
 
 ```zsh
@@ -105,7 +113,9 @@ Tags are always captured as an empty array. Use `-e` to add them at capture time
 
 ## Pipeline
 
-See [docs/pipeline.md](docs/pipeline.md) for the design of the processing pipeline that runs over captured notes.
+The pipeline is a Claude Code agent that processes captured notes into a persistent wiki — entity pages, concept pages, cross-references, and `@todo` resolution. Run it with the `/legilimens` skill from any Claude Code session.
+
+See [docs/pipeline.md](docs/pipeline.md) for the full design.
 
 ## License
 
