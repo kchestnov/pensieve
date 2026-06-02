@@ -1,6 +1,10 @@
 #compdef pensieve
 
 _pensieve() {
+    local -a subcommands=(
+        'list:browse notes with preview'
+        'edit:open latest note in $EDITOR'
+    )
     local -a types=(
         '@conversation:slack, email, any message fragment'
         '@article:web, docs, reference material'
@@ -10,8 +14,12 @@ _pensieve() {
         '@todo:intent to implement, pipeline resolves into a Story'
     )
 
-    if [[ $CURRENT -eq 2 && $words[CURRENT] == @* ]]; then
-        _describe 'type' types
+    if [[ $CURRENT -eq 2 ]]; then
+        if [[ $words[CURRENT] == @* ]]; then
+            _describe 'type' types
+        else
+            _describe 'subcommand' subcommands
+        fi
     fi
 }
 
