@@ -117,6 +117,83 @@ The pipeline is a Claude Code agent that processes captured notes into a persist
 
 See [docs/pipeline.md](docs/pipeline.md) for the full design.
 
+## Telegram bot
+
+[`bot/`](bot/) is a Telegram capture bot — a second writer into the same
+`raw/` store, for CLI-like capture from your phone. It reimplements the note
+format (byte-compatible with this CLI; see [bot/SCHEMA.md](bot/SCHEMA.md)),
+written in TypeScript + [grammY](https://grammy.dev), and runs in Docker with
+your `PENSIEVE_HOME` mounted in — so a compromised bot can only touch the store,
+nothing else on the host.
+
+### Setup
+
+1. **Create the bot** — message [@BotFather](https://t.me/BotFather), send
+   `/newbot`, copy the token.
+2. **Find your user id** — message [@userinfobot](https://t.me/userinfobot); it
+   replies with your numeric id (the allowlist is by id, so only you can use it).
+3. **Configure**:
+   ```sh
+   cd bot
+   cp .env.example .env
+   # edit .env:
+   #   TELEGRAM_BOT_TOKEN        from BotFather
+   #   PENSIEVE_TG_ALLOWED_USERS comma-separated numeric ids
+   #   PENSIEVE_HOST_DIR         ABSOLUTE host path to your pensieve store
+   ```
+
+### Run (Docker, recommended)
+
+```sh
+cd bot
+docker compose up --build -d     # start in the background
+docker compose logs -f           # follow logs
+docker compose down              # stop
+```
+
+`PENSIEVE_HOST_DIR` is mounted at `/data` inside the container; notes land under
+`$PENSIEVE_HOST_DIR/raw` on the host, exactly where the CLI writes. The container
+needs no inbound ports — it long-polls Telegram outbound.
+
+### Run (local dev)
+
+```sh
+cd bot
+npm install
+npm run dev        # loads .env, watches & restarts
+npm run build      # type-check + compile to dist/
+```
+
+### Usage
+
+Message the bot from Telegram:
+
+| You send | Result |
+|----------|--------|
+| `@todo migrate auth -- do the thing` | saved immediately as `@todo`, context `migrate auth` |
+| `@article rust ownership notes` | saved as `@article`, the text as the body |
+| any message with no leading `@type` | bot shows a type-picker keyboard |
+| a file / photo / voice (optional caption `@article some context`) | stored as an asset (with md5 dedup); no caption type → type-picker |
+| `/list` | recent notes as buttons — tap to read |
+| `/show <id>` | show a note by id |
+| `/help` | usage |
+
+Types match the CLI: `@conversation @article @command @snippet @log @todo`.
+
+Captured notes flow into the same [pipeline](#pipeline) — run `/legilimens` from
+Claude Code to digest them into the wiki.
+
+### Limits & safety
+
+- **Allowlist** — only the configured Telegram user ids may use the bot.
+- **Per-file cap** — uploads over `PENSIEVE_MAX_FILE_BYTES` (default 5 MiB) are rejected.
+- **Total cap** — uploads are refused once `raw/assets` would exceed
+  `PENSIEVE_MAX_TOTAL_BYTES` (default 50 GiB).
+
+`/legilimens` (run the pipeline) and `/ask` (query the wiki) from Telegram are
+registered but **not yet implemented**. Full details, configuration table, and
+layout in [bot/README.md](bot/README.md).
+
 ## License
 
 MIT

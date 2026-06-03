@@ -1,0 +1,18 @@
+services:
+  pensieve-bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # the bot only ever touches this mounted volume
+      PENSIEVE_HOME: /data
+      PENSIEVE_MAX_FILE_BYTES: ${PENSIEVE_MAX_FILE_BYTES:-5242880}
+      PENSIEVE_MAX_TOTAL_BYTES: ${PENSIEVE_MAX_TOTAL_BYTES:-53687091200}
+    volumes:
+      # host knowledge base -> container /data. Set PENSIEVE_HOST_DIR in .env to
+      # an absolute path (compose does not expand ~).
+      - ${PENSIEVE_HOST_DIR:?set PENSIEVE_HOST_DIR in .env}:/data
+    # resource ceilings (compose v2 honors these via the daemon)
+    mem_limit: 256m
+    pids_limit: 128
+    # the container needs no inbound ports — it long-polls Telegram outbound
