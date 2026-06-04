@@ -19,6 +19,11 @@ The bot **hand-serializes** frontmatter rather than using a YAML library: a
 generic dumper would reorder keys, quote the date, or render `tags: []`
 differently. `gray-matter` is used only on the read path (`src/core/list.ts`).
 
+The bot also edits notes after the fact — `setContext` (the ➕ Context button)
+inserts/updates the `context:` line right after `tags:`, and `deleteNote`
+removes a note and its asset (↔ `pensieve_rm_note`). Both manipulate the
+frontmatter as text to preserve the exact format above.
+
 ## The contract
 
 **Filename / id:** `raw/<YYYYMMDD-HHMMSS-mmm>.md` — local time, millisecond
@@ -29,7 +34,7 @@ suffix. (`timestampId` ↔ `pensieve_now_title`.)
 ```yaml
 ---
 date: 2026-06-03T20:45:00      # local time, no timezone, no fractional seconds
-type: <one of: conversation article command snippet log todo>
+type: <one of: conversation article command snippet log todo>  # bot writes a subset; format allows all six
 tags: []                        # always empty at capture time
 context: <words>                # only if context provided
 asset: assets/<slug>            # only if a file was captured

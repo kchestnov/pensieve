@@ -11,12 +11,27 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const bot = new Bot<BotContext>(config.token);
 
+  // never render link previews on the bot's own messages (e.g. the note browser
+  // echoing a note that contains a URL, or a saved link). Applies to all text.
+  bot.api.config.use((prev, method, payload, signal) => {
+    if (
+      (method === "sendMessage" || method === "editMessageText") &&
+      !("link_preview_options" in payload)
+    ) {
+      payload = { ...payload, link_preview_options: { is_disabled: true } };
+    }
+    return prev(method, payload, signal);
+  });
+
   // auth first — nothing runs for unknown users
   bot.use(authGate(config.allowedUsers));
 
   // commands before the generic text handler so /commands aren't captured
-  registerCommands(bot);
-  registerCapture(bot, config.token);
+  registerCommands(bot, config.deleteAfterSave);
+  registerCapture(bot, {
+    botToken: config.token,
+    deleteAfterSave: config.deleteAfterSave,
+  });
 
   bot.catch((err) => {
     console.error("bot error:", err.error);
@@ -26,10 +41,10 @@ async function main(): Promise<void> {
   const sweeper = setInterval(() => sweep(), 10 * 60 * 1000);
   sweeper.unref();
 
+  // order here is the order Telegram shows in the command menu; /list last
   await bot.api.setMyCommands([
-    { command: "list", description: "recent notes" },
-    { command: "show", description: "show a note by id" },
     { command: "help", description: "usage" },
+    { command: "list", description: "recent notes" },
   ]);
 
   console.log(`pensieve-bot up. Writing to ${pensieveHome()}/raw`);

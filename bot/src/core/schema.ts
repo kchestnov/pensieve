@@ -8,21 +8,14 @@
  * together. See bot/SCHEMA.md.
  */
 
-/** Valid capture types — mirrors PENSIEVE_TYPES in `pensieve:8`. */
-export const NOTE_TYPES = [
-  "conversation",
-  "article",
-  "command",
-  "snippet",
-  "log",
-  "todo",
-] as const;
+/**
+ * Capture types offered by the bot — a subset of the CLI's PENSIEVE_TYPES
+ * (`pensieve:8`). The bot only *writes* these, but it can *read* notes of any
+ * type the CLI created (list/show don't constrain the `type` value).
+ */
+export const NOTE_TYPES = ["conversation", "article", "snippet", "todo"] as const;
 
 export type NoteType = (typeof NOTE_TYPES)[number];
-
-export function isValidType(t: string): t is NoteType {
-  return (NOTE_TYPES as readonly string[]).includes(t);
-}
 
 /** Frontmatter fields, in the order pensieve emits them. */
 export interface Frontmatter {

@@ -170,15 +170,23 @@ Message the bot from Telegram:
 
 | You send | Result |
 |----------|--------|
-| `@todo migrate auth -- do the thing` | saved immediately as `@todo`, context `migrate auth` |
-| `@article rust ownership notes` | saved as `@article`, the text as the body |
-| any message with no leading `@type` | bot shows a type-picker keyboard |
-| a file / photo / voice (optional caption `@article some context`) | stored as an asset (with md5 dedup); no caption type → type-picker |
-| `/list` | recent notes as buttons — tap to read |
-| `/show <id>` | show a note by id |
+| any text note / forwarded message / pasted link | bot shows type buttons; tap one to save |
+| several messages forwarded at once / a photo album | folded into **one** note (one picker) |
+| a file / photo / video / voice | stored as an asset (md5 dedup) after you pick a type |
+| `/list` | recent notes in one tidy, paged, dismissable message |
 | `/help` | usage |
 
-Types match the CLI: `@conversation @article @command @snippet @log @todo`.
+Capture is **button-driven** — pick a type (`Conversation / Article / Snippet /
+Todo`, a phone-focused subset of the CLI's types) from the inline keyboard. The
+bot still reads notes of any type the CLI created.
+
+Every save replies with a confirmation titled like a `/list` entry (its context,
+else a preview of the body) plus **➕ Context** (add a hint for the pipeline,
+patched into the note) and **👁 Show** (view the note, with Delete) buttons —
+context is optional and never blocks a capture. Delete a note from the Show view
+or `/list`. After
+a save the bot tidies the chat by deleting your original message (toggle with
+`PENSIEVE_TG_DELETE_AFTER_SAVE`).
 
 Captured notes flow into the same [pipeline](#pipeline) — run `/legilimens` from
 Claude Code to digest them into the wiki.

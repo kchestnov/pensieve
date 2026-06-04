@@ -11,14 +11,40 @@ is reimplemented in `src/core` and kept byte-compatible with the CLI — see
 
 ## What it does
 
-- **Capture text** — send `@todo migrate auth -- do the thing` and it's saved
-  immediately. Without a leading `@type`, the bot shows a type-picker keyboard.
-- **Capture files** — documents, photos, video, audio, voice → stored as assets
-  (with md5 dedup). Caption with `@article some context` to set type up front.
-- **Browse** — `/list` shows recent notes as buttons; tap one (or `/show <id>`)
-  to read it.
-- **Guards** — only allowlisted Telegram user ids may use it; single files are
-  capped (default 5 MiB) and the asset store has a total cap (default 50 GiB).
+**Capture is button-driven.** Send a text note, forward, pasted link, or file
+(document/photo/video/audio/voice) and the bot shows an inline type-picker; tap
+a type and it's saved. Files are stored as assets with md5 dedup.
+
+Telegram commands can't be Cyrillic, so there are no per-type commands — you
+pick from type buttons (`Conversation / Article / Snippet / Todo`, a phone-focused
+subset of the CLI's types). The bot still reads notes of any type the CLI created.
+
+**Multi-message forwards become one note.** When you forward several messages at
+once (or send a photo album), they arrive back-to-back; everything that lands
+before you tap a type folds into a single capture — one picker, one note. The
+texts are joined into the body; multiple files are all stored as assets (the
+first fills the note's `asset:` field, all are listed in the body).
+
+**Context is optional and after-the-fact.** The save confirmation is titled like
+a `/list` entry (its context, else a preview of the body) and carries **➕ Context**
+and **👁 Show** buttons. Tap *Context* and the confirmation itself switches to an
+ask (no extra message — *✕ Cancel* backs out, leaving nothing behind); your next
+message becomes the context, patched into the note's frontmatter, and the title
+re-renders to show it. If the note already has a context, the ask shows the
+current value so you can replace it — or send `-` to clear. Tap *Show* to read
+the note in place (◀ Back returns, 🗑 Delete removes it). You can also delete from
+the `/list` browser. Nothing ever blocks a quick capture.
+
+**Tidy chat.** After a save the bot deletes your original message (and any
+context reply), leaving just the confirmation — so a forwarded link's preview
+disappears. Disable with `PENSIEVE_TG_DELETE_AFTER_SAVE=false`.
+
+**Browse.** `/list` opens one tidy, paged, dismissable message: a page of recent
+notes as buttons (label = context, else a body preview); tap one to read it in
+place, with Back / 🗑 Delete / ✕ Close. Nothing piles up in the chat.
+
+**Guards.** Only allowlisted Telegram user ids may use the bot; single files are
+capped (default 5 MiB) and the asset store has a total cap (default 50 GiB).
 
 `/legilimens` (run the pipeline) and `/ask` (query the wiki) are registered but
 **not yet implemented** — see Roadmap.
@@ -68,6 +94,7 @@ compiled bot (set env vars yourself, e.g. `node --env-file=.env dist/index.js`).
 | `PENSIEVE_HOME` | local only | `~/pensieve` | store path outside Docker |
 | `PENSIEVE_MAX_FILE_BYTES` | no | 5 MiB | per-file upload ceiling |
 | `PENSIEVE_MAX_TOTAL_BYTES` | no | 50 GiB | total cap on `raw/assets` |
+| `PENSIEVE_TG_DELETE_AFTER_SAVE` | no | `true` | delete your messages after a save (tidy chat) |
 
 ## Roadmap
 
@@ -85,15 +112,16 @@ src/
   config.ts           env parsing + validation
   core/               capture logic, decoupled from Telegram
     schema.ts         note types + frontmatter shape (the CLI contract)
-    note.ts           timestamp id, slugify, serialize, write, asset dedup
+    note.ts           timestamp id, slugify, serialize, write, asset dedup,
+                      setContext (format-preserving), deleteNote
     list.ts           listNotes / readNote (traversal-safe)
     quota.ts          per-file + total-store limits
     paths.ts          PENSIEVE_HOME / raw / assets resolution
   bot/                Telegram layer
     auth.ts           allowlist middleware
-    capture.ts        text + file handlers, type-picker keyboard
-    commands.ts       /list /show /help + /legilimens /ask stubs
-    pending.ts        short-lived store for type-picker payloads
+    capture.ts        type-picker capture, ➕ Context / 👁 Show confirmation
+    strings.ts        all user-facing UI strings + type labels
+    commands.ts       /list note browser, /help + /legilimens /ask stubs
+    pending.ts        short-lived state: awaiting-type + awaiting-context
     context.ts        BotContext type
-  util/parseInput.ts  parse "@type [context] [-- content]" like the CLI
 ```

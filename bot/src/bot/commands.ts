@@ -1,83 +1,124 @@
 import { Bot, InlineKeyboard } from "grammy";
-import { listNotes, readNote } from "../core/list.js";
-import { NOTE_TYPES } from "../core/schema.js";
+import { listPage, readNote, type NotePage } from "../core/list.js";
+import { deleteNote } from "../core/note.js";
 import type { BotContext } from "./context.js";
+import { S } from "./strings.js";
 
-/** Slash commands: capture help, browsing, and stubs for the future pipeline. */
-
-const HELP = [
-  "*Pensieve* — capture into your knowledge base.",
-  "",
-  "Send a message and I'll save it. Start it with a type to skip the picker:",
-  "`@todo migrate auth -- do the thing`",
-  "`@article rust ownership notes`",
-  "",
-  "Send a file/photo (optionally caption it `@article some context`) to store it as an asset.",
-  "",
-  "Types: " + NOTE_TYPES.map((t) => "`@" + t + "`").join(" "),
-  "",
-  "Commands:",
-  "`/list` — recent notes",
-  "`/show <id>` — show a note",
-].join("\n");
+/**
+ * Slash commands: help, the note browser, and stubs for the future pipeline.
+ *
+ * The browser is a single self-editing message — paging, open, and close all
+ * edit or delete that one message, so the chat never fills with list output.
+ */
 
 const TELEGRAM_MAX = 4096;
+const LABEL_MAX = 48;
 
-export function registerCommands(bot: Bot<BotContext>): void {
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/** The list browser: one button per note + a nav row (◀ page/pages ▶ ✕). */
+function listView(p: NotePage): { text: string; keyboard: InlineKeyboard } {
+  const kb = new InlineKeyboard();
+  for (const n of p.items) {
+    kb.text(truncate(n.label, LABEL_MAX), `lsopen:${n.id}:${p.page}`).row();
+  }
+  if (p.page > 0) kb.text("◀", `ls:${p.page - 1}`);
+  kb.text(`${p.page + 1}/${p.pages}`, "lsnoop");
+  if (p.page < p.pages - 1) kb.text("▶", `ls:${p.page + 1}`);
+  kb.text("✕", "lsx");
+  return { text: S.notesTitle(p.page + 1, p.pages, p.total), keyboard: kb };
+}
+
+/** A single note opened from the browser: Back to its page, Delete, Close. */
+function noteView(id: string, body: string, backPage: number): { text: string; keyboard: InlineKeyboard } {
+  const kb = new InlineKeyboard()
+    .text(S.del, `del:${id}:${backPage}`)
+    .text(S.close, "lsx")
+    .text(S.back, `ls:${backPage}`);
+  return { text: truncate(body, TELEGRAM_MAX - 1), keyboard: kb };
+}
+
+export function registerCommands(bot: Bot<BotContext>, deleteAfterSave: boolean): void {
+  /** Delete the command invocation so it doesn't linger (gated by the flag). */
+  async function tidyInvocation(ctx: BotContext): Promise<void> {
+    if (deleteAfterSave && ctx.chat && ctx.message) {
+      await ctx.api.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+    }
+  }
+
   bot.command(["start", "help"], async (ctx) => {
-    await ctx.reply(HELP, { parse_mode: "Markdown" });
+    await ctx.reply(S.help, { parse_mode: "Markdown" });
   });
 
   bot.command("list", async (ctx) => {
-    const notes = await listNotes(20);
-    if (notes.length === 0) {
-      await ctx.reply("No notes yet.");
-      return;
+    const p = await listPage(0);
+    if (p.total === 0) {
+      await ctx.reply(S.noNotes);
+    } else {
+      const v = listView(p);
+      await ctx.reply(v.text, { reply_markup: v.keyboard });
     }
-    const kb = new InlineKeyboard();
-    for (const n of notes) {
-      const label = n.label.length > 48 ? n.label.slice(0, 47) + "…" : n.label;
-      kb.text(label, `show:${n.id}`).row();
-    }
-    await ctx.reply("Recent notes:", { reply_markup: kb });
+    await tidyInvocation(ctx);
   });
 
-  bot.command("show", async (ctx) => {
-    const id = ctx.match.trim();
-    if (!id) {
-      await ctx.reply("Usage: /show <id>");
-      return;
-    }
-    await sendNote(ctx, id);
-  });
-
-  bot.callbackQuery(/^show:(.+)$/, async (ctx) => {
+  // page the browser in place
+  bot.callbackQuery(/^ls:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const id = (ctx.match as RegExpMatchArray)[1]!;
-    await sendNote(ctx, id);
+    const page = Number((ctx.match as RegExpMatchArray)[1]);
+    const v = listView(await listPage(page));
+    await ctx.editMessageText(v.text, { reply_markup: v.keyboard }).catch(() => {});
+  });
+
+  // open a note in place, with Back to its page
+  bot.callbackQuery(/^lsopen:([0-9-]+):(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const m = ctx.match as RegExpMatchArray;
+    const id = m[1]!;
+    const backPage = Number(m[2]);
+    try {
+      const v = noteView(id, await readNote(id), backPage);
+      await ctx.editMessageText(v.text, { reply_markup: v.keyboard }).catch(() => {});
+    } catch {
+      const kb = new InlineKeyboard().text(S.back, `ls:${backPage}`).text(S.close, "lsx");
+      await ctx.editMessageText(S.noteNotFound, { reply_markup: kb }).catch(() => {});
+    }
+  });
+
+  // delete from the browser, then return to the (clamped) list page
+  bot.callbackQuery(/^del:([0-9-]+):(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery({ text: S.deletedToast });
+    const m = ctx.match as RegExpMatchArray;
+    await deleteNote(m[1]!).catch(() => {});
+    const p = await listPage(Number(m[2]));
+    if (p.total === 0) {
+      const kb = new InlineKeyboard().text(S.close, "lsx");
+      await ctx.editMessageText(S.deletedNoneLeft, { reply_markup: kb }).catch(() => {});
+    } else {
+      const v = listView(p);
+      await ctx.editMessageText(v.text, { reply_markup: v.keyboard }).catch(() => {});
+    }
+  });
+
+  // page indicator (no-op) and close
+  bot.callbackQuery("lsnoop", (ctx) => ctx.answerCallbackQuery());
+  bot.callbackQuery("lsx", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.deleteMessage().catch(() => {});
   });
 
   // --- not yet implemented (scope: capture + list only) ---
-  // These are registered so the commands exist and the wiring is obvious; the
-  // pipeline run and wiki query land here later. See bot/README.md (Roadmap).
+  // Registered so the commands exist and the wiring is obvious; the pipeline run
+  // and wiki query land here later. See bot/README.md (Roadmap).
   bot.command("legilimens", async (ctx) => {
     // TODO: trigger the legilimens pipeline over raw/ (e.g. invoke Claude Code
     // headless, or enqueue a run on the host) and report progress back here.
-    await ctx.reply("🪄 /legilimens isn't wired up yet.");
+    await ctx.reply(S.legilimensStub);
   });
 
   bot.command("ask", async (ctx) => {
     // TODO: query the processed wiki and return an answer. Args in ctx.match.
-    await ctx.reply("🔮 /ask (wiki query) isn't wired up yet.");
+    await ctx.reply(S.askStub);
   });
-}
-
-async function sendNote(ctx: BotContext, id: string): Promise<void> {
-  try {
-    const note = await readNote(id);
-    const body = note.length > TELEGRAM_MAX ? note.slice(0, TELEGRAM_MAX - 1) + "…" : note;
-    await ctx.reply(body); // plain text: no parse_mode, so note content needs no escaping
-  } catch {
-    await ctx.reply(`Note not found: ${id}`);
-  }
 }

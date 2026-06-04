@@ -6,6 +6,14 @@
 export interface Config {
   token: string;
   allowedUsers: Set<number>;
+  /** delete the user's messages after a save (tidy chat). Default true. */
+  deleteAfterSave: boolean;
+}
+
+function boolEnv(name: string, fallback: boolean): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  if (v === undefined || v === "") return fallback;
+  return !(v === "0" || v === "false" || v === "no");
 }
 
 function required(name: string): string {
@@ -38,5 +46,9 @@ export function loadConfig(): Config {
   // PENSIEVE_HOME and the limit vars are read where used (core/paths, core/quota)
   // and have sensible defaults; nothing to validate here.
 
-  return { token, allowedUsers: new Set(ids) };
+  return {
+    token,
+    allowedUsers: new Set(ids),
+    deleteAfterSave: boolEnv("PENSIEVE_TG_DELETE_AFTER_SAVE", true),
+  };
 }

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { assetsDir, rawDir } from "./paths.js";
+import { isValidId } from "./list.js";
 import type { NoteType } from "./schema.js";
 
 /**
@@ -92,21 +93,15 @@ function md5File(path: string): Promise<string> {
 }
 
 /**
- * Save a captured file as an asset and write its note. Mirrors
- * pensieve_save_file (`pensieve:61-83`): md5 dedup against existing assets,
- * slug `<id>-<slug(base)>[.ext]`, body `[<name> — pending processing]`.
+ * Copy a captured file into raw/assets and return its `assets/<slug>` path,
+ * without writing a note. Mirrors the asset side of pensieve_save_file
+ * (`pensieve:61-81`): md5 dedup against existing assets, slug
+ * `<id>-<slug(base)>[.ext]`. The caller writes the note (so one note can list
+ * several assets — e.g. a forwarded album).
  */
-export async function saveAsset(
-  srcPath: string,
-  originalName: string,
-  type: NoteType,
-  context?: string,
-): Promise<WriteResult> {
+export async function storeAsset(srcPath: string, originalName: string): Promise<string> {
   const dir = assetsDir();
   await mkdir(dir, { recursive: true });
-
-  const date = new Date();
-  const id = timestampId(date);
 
   // dedup: reuse an existing asset with identical content
   const srcSum = await md5File(srcPath);
@@ -121,17 +116,62 @@ export async function saveAsset(
   if (!slug) {
     const ext = extname(originalName); // includes leading dot, or ""
     const base = basename(originalName, ext);
-    slug = `${id}-${slugify(base)}${ext}`;
+    slug = `${timestampId()}-${slugify(base)}${ext}`;
     await copyFile(srcPath, join(dir, slug));
   }
 
-  const asset = `assets/${slug}`;
-  const result = await writeNote({
-    type,
-    content: `[${originalName} — pending processing]`,
-    context,
-    asset,
-    date,
-  });
-  return { ...result, asset };
+  return `assets/${slug}`;
+}
+
+/**
+ * Add/replace/clear a note's `context:` line in place, preserving the exact
+ * frontmatter format (key order date/type/tags/context/asset). Used by the
+ * post-save "add context" flow. An empty value removes the line.
+ */
+export async function setContext(id: string, context: string): Promise<void> {
+  if (!isValidId(id)) throw new Error(`invalid note id: ${id}`);
+  const path = join(rawDir(), `${id}.md`);
+  const text = await readFile(path, "utf8");
+  const value = context.replace(/\s+/g, " ").trim();
+
+  const lines = text.split("\n");
+  let fmEnd = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === "---") {
+      fmEnd = i;
+      break;
+    }
+  }
+  if (lines[0] !== "---" || fmEnd === -1) {
+    throw new Error(`malformed frontmatter in ${id}`);
+  }
+
+  let ctxIdx = -1;
+  let tagsIdx = -1;
+  for (let i = 1; i < fmEnd; i++) {
+    if (lines[i]!.startsWith("context: ")) ctxIdx = i;
+    if (lines[i]!.startsWith("tags:")) tagsIdx = i;
+  }
+
+  if (value === "") {
+    if (ctxIdx !== -1) lines.splice(ctxIdx, 1);
+  } else if (ctxIdx !== -1) {
+    lines[ctxIdx] = `context: ${value}`;
+  } else {
+    // keep order: context goes right after tags (before any asset line)
+    const at = (tagsIdx !== -1 ? tagsIdx : fmEnd - 1) + 1;
+    lines.splice(at, 0, `context: ${value}`);
+  }
+
+  await writeFile(path, lines.join("\n"), "utf8");
+}
+
+/** Remove a note and its asset, if any. Mirrors pensieve_rm_note (`pensieve:102-110`). */
+export async function deleteNote(id: string): Promise<void> {
+  if (!isValidId(id)) throw new Error(`invalid note id: ${id}`);
+  const path = join(rawDir(), `${id}.md`);
+  const text = await readFile(path, "utf8"); // throws if the note is gone
+  const m = text.match(/^asset: (.+)$/m);
+  if (m) await rm(join(rawDir(), m[1]!), { force: true });
+  await rm(path, { force: true });
 }
