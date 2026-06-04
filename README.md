@@ -5,7 +5,7 @@ A CLI tool to capture anything into a personal knowledge base — clipboard, fil
 ## Installation
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kchestnov/pensieve/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kchestnov/pensieve/pensieve-cli/install.sh | sh
 ```
 
 Installs `pensieve` to `~/.local/bin/`, `_pensieve` completion to `~/.local/share/zsh/site-functions/`, and the Claude Code skill to `~/.claude/commands/` (if present). Re-run to update.
